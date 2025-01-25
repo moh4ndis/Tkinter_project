@@ -23,7 +23,7 @@ class LoginWindow:
         
     def login(self):
         if self.username_var.get() == "admin" and self.password_var.get() == "admin":
-            self.root.withdraw()  # Cache la fenêtre de connexion
+            self.root.withdraw()
             task_window = tk.Toplevel()
             app = TaskManager(task_window, self.root)
         else:
@@ -34,16 +34,17 @@ class TaskManager:
         self.master = master
         self.login_window = login_window
         self.master.title("Gestionnaire de Tâches")
-        self.master.geometry("500x600")
+        self.master.geometry("800x600")
         
         # Variables
         self.task_var = tk.StringVar()
         
+        # Structure de données pour les tâches et leur état
+        self.tasks = []  # Liste des tâches
+        self.checkboxes = []  # Liste des variables de cases à cocher
+        
         # Interface
         self.create_widgets()
-        
-        # Liste pour stocker les tâches
-        self.tasks = []
         
         # Charger les tâches existantes
         self.load_tasks()
@@ -59,12 +60,28 @@ class TaskManager:
         
         # Boutons
         ttk.Button(input_frame, text="Ajouter", command=self.add_task).pack(side=tk.LEFT, padx=5)
-        ttk.Button(input_frame, text="Supprimer", command=self.delete_task).pack(side=tk.LEFT, padx=5)
+        ttk.Button(input_frame, text="Supprimer sélectionnés", command=self.delete_selected_tasks).pack(side=tk.LEFT, padx=5)
         ttk.Button(input_frame, text="Éditer", command=self.edit_task).pack(side=tk.LEFT, padx=5)
         
-        # Zone de texte pour les tâches
-        self.task_area = ScrolledText(self.master, width=50, height=20)
-        self.task_area.pack(padx=5, pady=5)
+        # Frame pour la liste des tâches
+        self.tasks_frame = ttk.Frame(self.master)
+        self.tasks_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Scrollbar
+        self.scrollbar = ttk.Scrollbar(self.tasks_frame)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Canvas pour le scrolling
+        self.canvas = tk.Canvas(self.tasks_frame)
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # Configure scrollbar
+        self.scrollbar.config(command=self.canvas.yview)
+        self.canvas.config(yscrollcommand=self.scrollbar.set)
+        
+        # Frame pour les tâches dans le canvas
+        self.tasks_list_frame = ttk.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.tasks_list_frame, anchor='nw')
         
         # Boutons supplémentaires
         button_frame = ttk.Frame(self.master)
@@ -74,44 +91,56 @@ class TaskManager:
         ttk.Button(button_frame, text="Vider la liste", command=self.clear_tasks).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Déconnexion", command=self.logout).pack(side=tk.RIGHT, padx=5)
         
+        # Configuration du scrolling avec la molette de la souris
+        self.tasks_list_frame.bind('<Configure>', lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(-1*(event.delta//120), "units")
+            
     def add_task(self):
         task = self.task_var.get().strip()
         if task:
             self.tasks.append(task)
             self.update_task_display()
-            self.task_var.set("")  # Vider l'entrée
+            self.task_var.set("")
             
-    def delete_task(self):
-        try:
-            # Obtenir la ligne sélectionnée
-            selected = self.task_area.get("sel.first", "sel.last")
-            start_idx = self.task_area.index("sel.first").split('.')[0]
-            self.tasks.pop(int(start_idx) - 1)
-            self.update_task_display()
-        except tk.TclError:
-            messagebox.showwarning("Attention", "Veuillez sélectionner une tâche à supprimer.")
+    def delete_selected_tasks(self):
+        # Créer une nouvelle liste sans les tâches sélectionnées
+        new_tasks = []
+        new_checkboxes = []
+        for i, (task, var) in enumerate(zip(self.tasks, self.checkboxes)):
+            if not var.get():  # Si la case n'est pas cochée
+                new_tasks.append(task)
+                new_checkboxes.append(var)
+        
+        self.tasks = new_tasks
+        self.checkboxes = new_checkboxes
+        self.update_task_display()
             
     def edit_task(self):
-        try:
-            selected = self.task_area.get("sel.first", "sel.last")
-            start_idx = self.task_area.index("sel.first").split('.')[0]
-            task_idx = int(start_idx) - 1
-            
+        # Trouver la première tâche sélectionnée
+        selected_index = None
+        for i, var in enumerate(self.checkboxes):
+            if var.get():
+                selected_index = i
+                break
+        
+        if selected_index is not None:
             # Créer une fenêtre d'édition
             edit_window = tk.Toplevel(self.master)
             edit_window.title("Éditer la tâche")
             
-            edit_var = tk.StringVar(value=self.tasks[task_idx])
+            edit_var = tk.StringVar(value=self.tasks[selected_index])
             ttk.Entry(edit_window, textvariable=edit_var, width=40).pack(padx=5, pady=5)
             
             def save_edit():
-                self.tasks[task_idx] = edit_var.get()
+                self.tasks[selected_index] = edit_var.get()
                 self.update_task_display()
                 edit_window.destroy()
                 
             ttk.Button(edit_window, text="Sauvegarder", command=save_edit).pack(pady=5)
-            
-        except tk.TclError:
+        else:
             messagebox.showwarning("Attention", "Veuillez sélectionner une tâche à éditer.")
             
     def save_tasks(self):
@@ -131,16 +160,38 @@ class TaskManager:
     def clear_tasks(self):
         if messagebox.askyesno("Confirmation", "Voulez-vous vraiment vider la liste?"):
             self.tasks.clear()
+            self.checkboxes.clear()
             self.update_task_display()
             
     def update_task_display(self):
-        self.task_area.delete(1.0, tk.END)
-        for i, task in enumerate(self.tasks, 1):
-            self.task_area.insert(tk.END, f"{i}. {task}\n")
+        # Nettoyer le frame existant
+        for widget in self.tasks_list_frame.winfo_children():
+            widget.destroy()
+        
+        # Réinitialiser les checkboxes
+        self.checkboxes = []
+        
+        # Ajouter les tâches avec leurs cases à cocher
+        for i, task in enumerate(self.tasks):
+            frame = ttk.Frame(self.tasks_list_frame)
+            frame.pack(fill=tk.X, padx=5, pady=2)
+            
+            var = tk.BooleanVar()
+            self.checkboxes.append(var)
+            
+            checkbox = ttk.Checkbutton(frame, variable=var)
+            checkbox.pack(side=tk.LEFT)
+            
+            label = ttk.Label(frame, text=f"{i+1}. {task}")
+            label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Mettre à jour la zone scrollable
+        self.tasks_list_frame.update_idletasks()
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
             
     def logout(self):
         self.master.destroy()
-        self.login_window.deiconify()  # Réaffiche la fenêtre de connexion
+        self.login_window.deiconify()
 
 if __name__ == "__main__":
     root = tk.Tk()
