@@ -5,7 +5,7 @@ This is a simple graphical user interface application built using Python's Tkint
 ## Project Structure
 
 ```
-my-tkinter-app
+Tkinter_project
 ├── main.py              # Entry point of the
 ├── requirements.txt     # Project dependencies
 └── README.md            # Project documentation
@@ -23,7 +23,7 @@ To run this application, you need to have Python installed along with the requir
    ```
 2. Navigate to the project directory:
    ```
-   cd my-tkinter-app
+   cd Tkinter_project
    ```
 3. Install the required packages:
    ```
